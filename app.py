@@ -5,7 +5,6 @@ import tempfile
 import numpy as np
 from ultralytics import YOLO
 from gtts import gTTS
-
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="AR Navigation", layout="wide")
 
@@ -28,6 +27,11 @@ def play_audio(text):
 # ---------------- SIDEBAR ----------------
 mode = st.sidebar.radio("Select Mode", ["Live Camera (Local)", "Upload Video (Cloud)"])
 
+import os
+IS_CLOUD = "STREAMLIT_SERVER_RUNNING" in os.environ
+
+if IS_CLOUD:
+    st.warning("⚠️ Live camera is not supported on Streamlit Cloud. Please use Upload Video mode.")
 FRAME_WINDOW = st.image([])
 
 last_alert_time = 0
@@ -87,7 +91,7 @@ def generate_alert(objects):
 
     return ". ".join(messages)
 # ---------------- LIVE CAMERA MODE ----------------
-if mode == "Live Camera (Local)":
+if mode == "Live Camera (Local)" and not IS_CLOUD:
 
     if "cam_on" not in st.session_state:
         st.session_state.cam_on = False
@@ -155,4 +159,5 @@ else:
         cap.release()
 
     else:
+
         st.info("Upload a video for navigation analysis")
