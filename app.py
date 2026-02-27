@@ -1,10 +1,17 @@
 import streamlit as st
-import cv2
 import time
 import tempfile
 import numpy as np
 from ultralytics import YOLO
 from gtts import gTTS
+
+#----------------SAFE CV2 IMPORT----------
+
+try:
+    import cv2
+except Exception:
+    cv2 = None
+    
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="AR Navigation", layout="wide")
 
@@ -91,7 +98,7 @@ def generate_alert(objects):
 
     return ". ".join(messages)
 # ---------------- LIVE CAMERA MODE ----------------
-if mode == "Live Camera (Local)" and not IS_CLOUD:
+if mode == "Live Camera (Local)" and cv2 is not None and not IS_CLOUD:
 
     if "cam_on" not in st.session_state:
         st.session_state.cam_on = False
@@ -105,7 +112,7 @@ if mode == "Live Camera (Local)" and not IS_CLOUD:
         if st.button("⏹ Stop Camera"):
             st.session_state.cam_on = False
 
-    if st.session_state.cam_on:
+    if st.session_state.cam_on and not IS_CLOUD:
         cap = cv2.VideoCapture(0)
 
         while st.session_state.cam_on:
@@ -131,7 +138,12 @@ if mode == "Live Camera (Local)" and not IS_CLOUD:
 
 # ---------------- VIDEO UPLOAD MODE ----------------
 else:
-    uploaded_file = st.file_uploader("Upload a walking video", type=["mp4", "avi", "mov"])
+    video_file = st.file_uploader("Upload a video", type=["mp4", "avi"])
+
+if video_file:
+    tfile = open("temp.mp4", "wb")
+    tfile.write(video_file.read())
+    cap = cv2.VideoCapture("temp.mp4")
 
     if uploaded_file is not None:
         tfile = tempfile.NamedTemporaryFile(delete=False)
@@ -161,3 +173,4 @@ else:
     else:
 
         st.info("Upload a video for navigation analysis")
+
