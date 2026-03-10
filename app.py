@@ -2,18 +2,20 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 import cv2
 import av
-import numpy as np
 from ultralytics import YOLO
 from gtts import gTTS
 import tempfile
 
-st.set_page_config(page_title="AI Navigation Assistant")
+st.set_page_config(page_title="AI Navigation Assistant", layout="wide")
 
-st.title("Augmented Reality Navigation for Visually Impaired")
+st.title("AI Navigation Assistant for Visually Impaired")
 
-st.write("Detects objects and gives navigation guidance.")
+st.write("Detects obstacles and gives voice guidance.")
 
-# Load YOLO model
+# --------------------------
+# Load YOLO Model
+# --------------------------
+
 @st.cache_resource
 def load_model():
     model = YOLO("yolov8n.pt")
@@ -21,33 +23,9 @@ def load_model():
 
 model = load_model()
 
-
-def estimate_distance(box_height):
-
-    if box_height > 350:
-        return "Very Close"
-
-    elif box_height > 200:
-        return "Close"
-
-    elif box_height > 120:
-        return "Medium"
-
-    else:
-        return "Far"
-
-
-def estimate_direction(x_center, width):
-
-    if x_center < width/3:
-        return "Left"
-
-    elif x_center > 2*width/3:
-        return "Right"
-
-    else:
-        return "Center"
-
+# --------------------------
+# Voice Function
+# --------------------------
 
 def speak(text):
 
@@ -59,6 +37,42 @@ def speak(text):
 
     st.audio(tmp.name)
 
+# --------------------------
+# Distance Estimation
+# --------------------------
+
+def estimate_distance(box_height):
+
+    if box_height > 350:
+        return "Very Close"
+
+    elif box_height > 220:
+        return "Close"
+
+    elif box_height > 120:
+        return "Medium"
+
+    else:
+        return "Far"
+
+# --------------------------
+# Direction Estimation
+# --------------------------
+
+def estimate_direction(x_center, frame_width):
+
+    if x_center < frame_width/3:
+        return "Left"
+
+    elif x_center > 2*frame_width/3:
+        return "Right"
+
+    else:
+        return "Center"
+
+# --------------------------
+# Video Processing
+# --------------------------
 
 class VideoProcessor(VideoProcessorBase):
 
@@ -96,9 +110,15 @@ class VideoProcessor(VideoProcessorBase):
 
                 cv2.rectangle(img,(x1,y1),(x2,y2),(0,255,0),2)
 
-                cv2.putText(img,text,(x1,y1-10),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6,(0,255,0),2)
+                cv2.putText(
+                    img,
+                    text,
+                    (x1,y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0,255,0),
+                    2
+                )
 
                 key = label + direction
 
@@ -110,8 +130,34 @@ class VideoProcessor(VideoProcessorBase):
 
                     self.detected.add(key)
 
+                # Obstacle Warning
+                if distance == "Very Close":
+
+                    cv2.putText(
+                        img,
+                        "WARNING OBSTACLE!",
+                        (50,50),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0,0,255),
+                        3
+                    )
+
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
+# --------------------------
+# Emergency Button
+# --------------------------
+
+if st.button("🚨 Emergency Help"):
+
+    st.error("Emergency alert triggered!")
+
+    speak("Emergency alert activated")
+
+# --------------------------
+# WebRTC Camera
+# --------------------------
 
 RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
