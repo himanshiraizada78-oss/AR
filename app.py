@@ -1,18 +1,19 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 import cv2
+import av
 import numpy as np
 from ultralytics import YOLO
 from gtts import gTTS
 import tempfile
-import time
 
-st.set_page_config(page_title="AI Navigation Assistant", layout="wide")
+st.set_page_config(page_title="AI Navigation Assistant")
 
-st.title("AI Augmented Reality Navigation for Visually Impaired")
+st.title("Augmented Reality Navigation for Visually Impaired")
 
-st.write("This system detects objects, estimates distance and gives voice guidance.")
+st.write("Detects objects and gives navigation guidance.")
 
-# Load AI model
+# Load YOLO model
 @st.cache_resource
 def load_model():
     model = YOLO("yolov8n.pt")
@@ -20,102 +21,105 @@ def load_model():
 
 model = load_model()
 
-# Voice function
-def speak(text):
-    tts = gTTS(text)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(tmp.name)
-    st.audio(tmp.name)
 
-# Distance estimation
 def estimate_distance(box_height):
 
-    if box_height > 400:
+    if box_height > 350:
         return "Very Close"
 
-    elif box_height > 250:
+    elif box_height > 200:
         return "Close"
 
     elif box_height > 120:
-        return "Medium Distance"
+        return "Medium"
 
     else:
         return "Far"
 
-# Direction estimation
-def estimate_direction(x_center, frame_width):
 
-    if x_center < frame_width/3:
+def estimate_direction(x_center, width):
+
+    if x_center < width/3:
         return "Left"
 
-    elif x_center > 2*frame_width/3:
+    elif x_center > 2*width/3:
         return "Right"
 
     else:
         return "Center"
 
 
-# UI Buttons
-start = st.button("Start Camera")
-stop = st.button("Stop Camera")
+def speak(text):
 
-FRAME = st.image([])
+    tts = gTTS(text)
 
-camera = None
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
 
-if start:
-    camera = cv2.VideoCapture(0)
+    tts.save(tmp.name)
 
-detected_cache = {}
+    st.audio(tmp.name)
 
-while start and camera is not None:
 
-    ret, frame = camera.read()
+class VideoProcessor(VideoProcessorBase):
 
-    if not ret:
-        st.error("Camera not detected")
-        break
+    def __init__(self):
 
-    frame_height, frame_width, _ = frame.shape
+        self.detected = set()
 
-    results = model(frame)
+    def recv(self, frame):
 
-    for r in results:
+        img = frame.to_ndarray(format="bgr24")
 
-        for box in r.boxes:
+        height, width, _ = img.shape
 
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            cls = int(box.cls[0])
-            label = model.names[cls]
+        results = model(img)
 
-            box_height = y2 - y1
+        for r in results:
 
-            distance = estimate_distance(box_height)
+            for box in r.boxes:
 
-            x_center = (x1 + x2) / 2
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
 
-            direction = estimate_direction(x_center, frame_width)
+                cls = int(box.cls[0])
 
-            text = f"{label} | {distance} | {direction}"
+                label = model.names[cls]
 
-            cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
-            cv2.putText(frame,text,(x1,y1-10),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,255,0),2)
+                box_height = y2 - y1
 
-            key = label + direction
+                distance = estimate_distance(box_height)
 
-            # Speak only if new object
-            if key not in detected_cache:
+                x_center = (x1 + x2) / 2
 
-                message = f"{label} detected {direction} side {distance}"
-                speak(message)
+                direction = estimate_direction(x_center, width)
 
-                detected_cache[key] = time.time()
+                text = f"{label} | {distance} | {direction}"
 
-    FRAME.image(frame, channels="BGR")
+                cv2.rectangle(img,(x1,y1),(x2,y2),(0,255,0),2)
 
-    if stop:
-        break
+                cv2.putText(img,text,(x1,y1-10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,(0,255,0),2)
 
-if camera is not None:
-    camera.release()
+                key = label + direction
+
+                if key not in self.detected:
+
+                    message = f"{label} detected {direction} side {distance}"
+
+                    speak(message)
+
+                    self.detected.add(key)
+
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+
+RTC_CONFIGURATION = RTCConfiguration(
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
+
+webrtc_streamer(
+    key="ai-navigation",
+    video_processor_factory=VideoProcessor,
+    rtc_configuration=RTC_CONFIGURATION,
+    media_stream_constraints={"video": True, "audio": False},
+)
