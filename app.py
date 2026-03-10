@@ -11,25 +11,31 @@ st.set_page_config(page_title="AI Navigation Assistant")
 
 st.title("AI Navigation Assistant for Visually Impaired")
 
-# Load YOLO model
+# ---------------- MODEL ----------------
 @st.cache_resource
 def load_model():
     return YOLO("yolov8n.pt")
 
 model = load_model()
 
-# Voice function
+# ---------------- AUDIO ----------------
 def speak(text):
     tts = gTTS(text)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(tmp.name)
     st.audio(tmp.name)
 
+# To avoid repeating same object
+last_spoken = ""
+
 # ---------------------------------
 # Webcam Detection
 # ---------------------------------
 
 class VideoProcessor(VideoProcessorBase):
+
+    def __init__(self):
+        self.last_label = ""
 
     def recv(self, frame):
 
@@ -39,7 +45,9 @@ class VideoProcessor(VideoProcessorBase):
 
         annotated = results[0].plot()
 
-        for box in results[0].boxes[:1]:
+        if len(results[0].boxes) > 0:
+
+            box = results[0].boxes[0]
 
             cls = int(box.cls[0])
 
@@ -47,7 +55,12 @@ class VideoProcessor(VideoProcessorBase):
 
             st.write(f"{label} detected")
 
+            if label != self.last_label:
+                speak(f"{label} ahead")
+                self.last_label = label
+
         return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+
 
 st.header("Live Webcam Detection")
 
@@ -67,17 +80,19 @@ webrtc_streamer(
 
 st.header("Upload Video")
 
-video_file = st.file_uploader("Upload Video", type=["mp4","mov","avi"])
+video_file = st.file_uploader("Upload Video", type=["mp4", "mov", "avi"])
 
 if video_file:
 
     tfile = tempfile.NamedTemporaryFile(delete=False)
-
     tfile.write(video_file.read())
 
     cap = cv2.VideoCapture(tfile.name)
 
     stframe = st.empty()
+
+    frame_count = 0
+    last_label = ""
 
     while cap.isOpened():
 
@@ -86,11 +101,28 @@ if video_file:
         if not ret:
             break
 
+        frame_count += 1
+
+        # Process every 5th frame for speed
+        if frame_count % 5 != 0:
+            continue
+
         results = model(frame)
 
         annotated = results[0].plot()
 
+        if len(results[0].boxes) > 0:
+
+            box = results[0].boxes[0]
+
+            cls = int(box.cls[0])
+
+            label = model.names[cls]
+
+            if label != last_label:
+                speak(f"{label} ahead")
+                last_label = label
+
         stframe.image(annotated, channels="BGR")
 
     cap.release()
-
