@@ -1,131 +1,95 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
+import av
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from PIL import Image
 from gtts import gTTS
 import tempfile
 
-st.set_page_config(page_title="AI Navigation Assistant", layout="wide")
+st.set_page_config(page_title="AI Navigation Assistant")
 
 st.title("AI Navigation Assistant for Visually Impaired")
 
-st.write("Upload an image and the system will detect objects and give navigation guidance.")
-
-# -----------------------------
-# Load YOLO Model
-# -----------------------------
-
+# Load YOLO model
 @st.cache_resource
 def load_model():
     return YOLO("yolov8n.pt")
 
 model = load_model()
 
-# -----------------------------
-# Voice Function
-# -----------------------------
-
+# Voice function
 def speak(text):
     tts = gTTS(text)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(tmp.name)
     st.audio(tmp.name)
 
-# -----------------------------
-# Distance Estimation
-# -----------------------------
+# ---------------------------------
+# Webcam Detection
+# ---------------------------------
 
-def estimate_distance(box_height):
+class VideoProcessor(VideoProcessorBase):
 
-    if box_height > 350:
-        return "Very Close"
+    def recv(self, frame):
 
-    elif box_height > 200:
-        return "Close"
+        img = frame.to_ndarray(format="bgr24")
 
-    elif box_height > 120:
-        return "Medium"
+        results = model(img)
 
-    else:
-        return "Far"
+        annotated = results[0].plot()
 
-# -----------------------------
-# Direction Estimation
-# -----------------------------
-
-def estimate_direction(x_center, width):
-
-    if x_center < width/3:
-        return "Left"
-
-    elif x_center > 2*width/3:
-        return "Right"
-
-    else:
-        return "Center"
-
-# -----------------------------
-# Upload Image
-# -----------------------------
-
-uploaded_file = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
-
-if uploaded_file:
-
-    image = Image.open(uploaded_file)
-
-    img = np.array(image)
-
-    height, width, _ = img.shape
-
-    results = model(img)
-
-    for r in results:
-
-        for box in r.boxes:
-
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
+        for box in results[0].boxes:
 
             cls = int(box.cls[0])
 
             label = model.names[cls]
 
-            box_height = y2 - y1
+            speak(f"{label} detected")
 
-            distance = estimate_distance(box_height)
+        return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
-            x_center = (x1 + x2) / 2
+st.header("Live Webcam Detection")
 
-            direction = estimate_direction(x_center, width)
+RTC_CONFIGURATION = RTCConfiguration(
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
 
-            text = f"{label} | {distance} | {direction}"
+webrtc_streamer(
+    key="webcam",
+    video_processor_factory=VideoProcessor,
+    rtc_configuration=RTC_CONFIGURATION
+)
 
-            cv2.rectangle(img,(x1,y1),(x2,y2),(0,255,0),2)
+# ---------------------------------
+# Video Upload Detection
+# ---------------------------------
 
-            cv2.putText(
-                img,
-                text,
-                (x1,y1-10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0,255,0),
-                2
-            )
+st.header("Upload Video")
 
-            message = f"{label} detected {direction} side {distance}"
+video_file = st.file_uploader("Upload Video", type=["mp4","mov","avi"])
 
-            speak(message)
+if video_file:
 
-    st.image(img, channels="BGR")
+    tfile = tempfile.NamedTemporaryFile(delete=False)
 
-# -----------------------------
-# Emergency Button
-# -----------------------------
+    tfile.write(video_file.read())
 
-if st.button("🚨 Emergency Help"):
+    cap = cv2.VideoCapture(tfile.name)
 
-    st.error("Emergency alert triggered!")
+    stframe = st.empty()
 
-    speak("Emergency alert activated")
-    
+    while cap.isOpened():
+
+        ret, frame = cap.read()
+
+        if not ret:
+            break
+
+        results = model(frame)
+
+        annotated = results[0].plot()
+
+        stframe.image(annotated, channels="BGR")
+
+    cap.release()
