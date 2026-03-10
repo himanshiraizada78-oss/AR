@@ -39,13 +39,13 @@ class VideoProcessor(VideoProcessorBase):
 
         annotated = results[0].plot()
 
-        for box in results[0].boxes:
+        for box in results[0].boxes[:1]:
 
             cls = int(box.cls[0])
 
             label = model.names[cls]
 
-            speak(f"{label} detected")
+            st.write(f"{label} detected")
 
         return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
@@ -93,3 +93,4 @@ if video_file:
         stframe.image(annotated, channels="BGR")
 
     cap.release()
+
