@@ -5,3 +5,4 @@ numpy==1.26.4
 ultralytics==8.1.0
 gTTS==2.5.1
 Pillow==10.2.0
+av
