@@ -4,69 +4,118 @@ import numpy as np
 from ultralytics import YOLO
 from gtts import gTTS
 import tempfile
-import os
-from PIL import Image
+import time
 
-st.title("AR Navigation Assistant for Visually Impaired")
+st.set_page_config(page_title="AI Navigation Assistant", layout="wide")
 
-st.write("This system detects nearby objects and gives voice feedback.")
+st.title("AI Augmented Reality Navigation for Visually Impaired")
 
-# Load YOLO model
+st.write("This system detects objects, estimates distance and gives voice guidance.")
+
+# Load AI model
 @st.cache_resource
 def load_model():
-    model = YOLO("yolov8n.pt")  # lightweight model
+    model = YOLO("yolov8n.pt")
     return model
 
 model = load_model()
 
-# Function for speech
+# Voice function
 def speak(text):
     tts = gTTS(text)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(tmp.name)
     st.audio(tmp.name)
 
-# Start camera
-run = st.checkbox("Start Camera")
+# Distance estimation
+def estimate_distance(box_height):
 
-FRAME_WINDOW = st.image([])
+    if box_height > 400:
+        return "Very Close"
 
-camera = cv2.VideoCapture(0)
+    elif box_height > 250:
+        return "Close"
 
-detected_objects = set()
+    elif box_height > 120:
+        return "Medium Distance"
 
-while run:
-    
+    else:
+        return "Far"
+
+# Direction estimation
+def estimate_direction(x_center, frame_width):
+
+    if x_center < frame_width/3:
+        return "Left"
+
+    elif x_center > 2*frame_width/3:
+        return "Right"
+
+    else:
+        return "Center"
+
+
+# UI Buttons
+start = st.button("Start Camera")
+stop = st.button("Stop Camera")
+
+FRAME = st.image([])
+
+camera = None
+
+if start:
+    camera = cv2.VideoCapture(0)
+
+detected_cache = {}
+
+while start and camera is not None:
+
     ret, frame = camera.read()
 
     if not ret:
-        st.write("Camera not working")
+        st.error("Camera not detected")
         break
+
+    frame_height, frame_width, _ = frame.shape
 
     results = model(frame)
 
-    labels = []
-
     for r in results:
-        boxes = r.boxes
-        for box in boxes:
 
-            cls = int(box.cls[0])
-            label = model.names[cls]
-            labels.append(label)
+        for box in r.boxes:
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
+            cls = int(box.cls[0])
+            label = model.names[cls]
+
+            box_height = y2 - y1
+
+            distance = estimate_distance(box_height)
+
+            x_center = (x1 + x2) / 2
+
+            direction = estimate_direction(x_center, frame_width)
+
+            text = f"{label} | {distance} | {direction}"
 
             cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
-            cv2.putText(frame,label,(x1,y1-10),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.7,(0,255,0),2)
+            cv2.putText(frame,text,(x1,y1-10),
+                        cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,255,0),2)
 
-    FRAME_WINDOW.image(frame, channels="BGR")
+            key = label + direction
 
-    # Speak newly detected objects
-    for obj in labels:
-        if obj not in detected_objects:
-            speak(obj + " detected")
-            detected_objects.add(obj)
+            # Speak only if new object
+            if key not in detected_cache:
 
-camera.release()
+                message = f"{label} detected {direction} side {distance}"
+                speak(message)
+
+                detected_cache[key] = time.time()
+
+    FRAME.image(frame, channels="BGR")
+
+    if stop:
+        break
+
+if camera is not None:
+    camera.release()
