@@ -7,7 +7,7 @@ from ultralytics import YOLO
 from gtts import gTTS
 import tempfile
 
-st.set_page_config(page_title="AI Navigation Assistant")
+st.set_page_config(page_title="🚶AI Navigation Assistant")
 
 st.title("AI Navigation Assistant for Visually Impaired")
 
@@ -126,3 +126,4 @@ if video_file:
         stframe.image(annotated, channels="BGR")
 
     cap.release()
+
